@@ -607,19 +607,27 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
     let messageHeadersList: any[] = [];
-    const maxFetchCount = Math.min(50, Number(req.body?.max_results) || 35);
-    const searchQuery = typeof req.body?.q === 'string' ? req.body.q : 'in:inbox';
+    const maxFetchCount = Math.min(100, Number(req.body?.max_results) || 50);
+    const rawQuery = req.body?.q;
+    // When q is 'all' or empty, do not restrict by query or date so all user emails in mailbox are retrieved
+    const searchQuery = (typeof rawQuery === 'string' && rawQuery.trim() !== '' && rawQuery.trim().toLowerCase() !== 'all')
+      ? rawQuery.trim()
+      : '';
 
     try {
-      const listRes = await gmail.users.messages.list({
+      const listParams: any = {
         userId: 'me',
         maxResults: maxFetchCount,
-        q: searchQuery,
-      });
+      };
+      if (searchQuery) {
+        listParams.q = searchQuery;
+      }
+      const listRes = await gmail.users.messages.list(listParams);
       messageHeadersList = listRes.data.messages || [];
     } catch (apiErr: any) {
       // Fallback to direct REST fetch if googleapis client encountered credential wrap issues
-      const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxFetchCount}&q=${encodeURIComponent(searchQuery)}`;
+      const queryParam = searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : '';
+      const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxFetchCount}${queryParam}`;
       const listRes = await fetch(listUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -1162,7 +1170,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   }));
 
   const systemInstruction = `
-You are "Inbox Copilot", the intelligent executive AI assistant inside InboxPulse AI for team KITSW WARRIOR (SaaSsum AI).
+You are "Inbox Copilot", the intelligent executive AI assistant inside InboxPulse AI.
 Your purpose is to assist the user by answering queries about their synchronized emails, tasks, deadlines, bills, security alerts, and reply drafts.
 
 Active Ingested Emails Context:

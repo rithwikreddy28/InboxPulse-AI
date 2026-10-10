@@ -393,8 +393,8 @@ function MainApp() {
         body: JSON.stringify({
           access_token: authToken,
           clear_demo: true,
-          max_results: 35,
-          q: 'in:inbox',
+          max_results: 50,
+          q: 'all',
         }),
       });
 
@@ -1191,7 +1191,7 @@ function MainApp() {
     if (emails.length === 0) return;
 
     let briefing = `# 📬 InboxPulse AI — Executive Intelligence Briefing\n`;
-    briefing += `**Generated:** ${new Date().toLocaleString()} | **Team:** KITSW WARRIOR (SaaSsum AI)\n\n`;
+    briefing += `**Generated:** ${new Date().toLocaleString()} | **Agent:** InboxPulse AI\n\n`;
     briefing += `### Overview Metrics\n`;
     briefing += `- **Total Ingested:** ${stats.total_emails}\n`;
     briefing += `- **High Urgency:** ${stats.high_urgency}\n`;
@@ -1331,12 +1331,9 @@ function MainApp() {
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
               <Zap className="w-3.5 h-3.5 mr-1 text-indigo-400" /> LIVE GMAIL AGENT v2.0
             </span>
-            <span className="text-slate-300">
-              Team: <strong className="text-white">KITSW WARRIOR</strong>
-            </span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-300">
-              Track: <strong className="text-indigo-300">SaaSsum AI (IT & AI)</strong>
+            <span className="text-slate-300 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Real-time Mailbox Intelligence & Priority Triage
             </span>
           </div>
           <div className="flex items-center gap-3 text-slate-300">
