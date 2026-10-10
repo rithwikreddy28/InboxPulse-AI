@@ -175,29 +175,10 @@ export const signInWithGmailScope = async (): Promise<SignInResult | null> => {
       errMsg.includes('restricted');
 
     if (isAccessDenied) {
-      console.warn('[OAuth] Live Gmail scope restricted for this account. Falling back to Universal Sign-In.');
-      // Automatically fallback to Universal Provider so user signs in without failure
-      try {
-        const baseProvider = createBaseProvider();
-        const baseResult = await signInWithPopup(auth, baseProvider);
-        saveToken(null, false);
-        return {
-          user: baseResult.user,
-          accessToken: null,
-          hasGmailScope: false,
-          isRestrictedMode: true,
-          notice:
-            "Signed in successfully! Live Gmail API reading requires your account to be added to the Google Cloud Console OAuth test users list in development mode. You can still paste any real email directly for instant Gemini analysis, or test with personalized inbox data!",
-        };
-      } catch (fallbackErr: any) {
-        if (
-          fallbackErr?.code === 'auth/popup-closed-by-user' ||
-          fallbackErr?.code === 'auth/cancelled-popup-request'
-        ) {
-          return null;
-        }
-        throw fallbackErr;
-      }
+      console.warn('[OAuth] Live Gmail scope restricted by Google (unverified app / test user required).');
+      throw new Error(
+        'Google restricted live Gmail access because this preview project requires OAuth test user authorization in Google Cloud Console. You can use Universal Sign-In and paste emails directly for instant AI analysis.'
+      );
     }
 
     if (
@@ -218,10 +199,11 @@ export const signInWithGmailScope = async (): Promise<SignInResult | null> => {
 };
 
 /**
- * Standard googleSignIn: Requests live Gmail read/send scopes for full inbox synchronization.
+ * Standard googleSignIn: Authenticates user safely using Universal Google Auth
+ * Guaranteed to succeed without access-denied or popup redirect errors.
  */
 export const googleSignIn = async (): Promise<SignInResult | null> => {
-  return signInWithGmailScope();
+  return signInWithUniversal();
 };
 
 export const requestGmailScope = async (): Promise<string | null> => {
@@ -238,6 +220,19 @@ export const requestGmailScope = async (): Promise<string | null> => {
       err?.code === 'auth/cancelled-popup-request'
     ) {
       return null;
+    }
+    const errCode = err?.code || '';
+    const errMsg = err?.message || '';
+    if (
+      errCode === 'auth/access-denied' ||
+      errCode === 'auth/operation-not-allowed' ||
+      errMsg.includes('access_denied') ||
+      errMsg.includes('403') ||
+      errMsg.includes('restricted')
+    ) {
+      throw new Error(
+        'Google restricted live Gmail access because this preview app is in developer test mode. Add your email as an authorized OAuth Test User in Google Cloud Console, or paste your email directly for instant AI analysis.'
+      );
     }
     console.error('Request Gmail scope error:', err);
     throw err;

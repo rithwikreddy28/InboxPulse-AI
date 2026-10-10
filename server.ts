@@ -582,19 +582,24 @@ app.get('/api/emails', (req: Request, res: Response) => {
 
 // POST /api/gmail/sync - Live Gmail Ingestion via Google OAuth Access Token using official googleapis client
 app.post('/api/gmail/sync', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
+  const authHeader =
+    req.headers['x-access-token'] ||
+    req.headers['x-google-access-token'] ||
+    req.headers.authorization;
   let accessToken = '';
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     accessToken = authHeader.replace('Bearer ', '').trim();
+  } else if (typeof authHeader === 'string') {
+    accessToken = authHeader.trim();
   } else if (req.body?.access_token) {
     accessToken = String(req.body.access_token).trim();
   }
 
   if (!accessToken) {
-    return res.status(401).json({
+    return res.status(200).json({
       success: false,
-      error: 'Missing or invalid Google OAuth access token. Please connect with Google.',
+      error: 'Missing Google OAuth access token. Please connect with Google.',
     });
   }
 
@@ -610,9 +615,12 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
     const maxFetchCount = Math.min(100, Number(req.body?.max_results) || 50);
     const rawQuery = req.body?.q;
     // When q is 'all' or empty, do not restrict by query or date so all user emails in mailbox are retrieved
-    const searchQuery = (typeof rawQuery === 'string' && rawQuery.trim() !== '' && rawQuery.trim().toLowerCase() !== 'all')
-      ? rawQuery.trim()
-      : '';
+    const searchQuery =
+      typeof rawQuery === 'string' &&
+      rawQuery.trim() !== '' &&
+      rawQuery.trim().toLowerCase() !== 'all'
+        ? rawQuery.trim()
+        : '';
 
     try {
       const listParams: any = {
@@ -635,15 +643,24 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
       if (!listRes.ok) {
         const errText = await listRes.text();
         let errorMsg = `Failed to fetch messages from Gmail API (${listRes.status})`;
+        let isScopeRestricted = listRes.status === 403;
         try {
           const parsed = JSON.parse(errText);
           if (parsed.error?.message) {
             errorMsg = parsed.error.message;
+            if (
+              errorMsg.toLowerCase().includes('insufficient') ||
+              errorMsg.toLowerCase().includes('scope') ||
+              errorMsg.toLowerCase().includes('permission')
+            ) {
+              isScopeRestricted = true;
+            }
           }
         } catch {}
-        return res.status(listRes.status).json({
+        return res.status(200).json({
           success: false,
           error: errorMsg,
+          isScopeRestricted,
         });
       }
 
@@ -1016,10 +1033,15 @@ app.post('/api/tasks/toggle', (req: Request, res: Response) => {
 
 // POST /api/gmail/send - Direct Email Send/Reply using official googleapis
 app.post('/api/gmail/send', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
+  const authHeader =
+    req.headers['x-access-token'] ||
+    req.headers['x-google-access-token'] ||
+    req.headers.authorization;
   let accessToken = '';
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     accessToken = authHeader.replace('Bearer ', '').trim();
+  } else if (typeof authHeader === 'string') {
+    accessToken = authHeader.trim();
   } else if (req.body?.access_token) {
     accessToken = String(req.body.access_token).trim();
   }
@@ -1030,7 +1052,7 @@ app.post('/api/gmail/send', async (req: Request, res: Response) => {
   }
 
   if (!accessToken) {
-    return res.status(401).json({
+    return res.status(200).json({
       success: false,
       error: 'Google OAuth access token with gmail.send scope is required to dispatch live email.',
     });
@@ -1084,10 +1106,15 @@ app.post('/api/gmail/send', async (req: Request, res: Response) => {
 
 // POST /api/calendar/create-event - One-Click Calendar Event Creation
 app.post('/api/calendar/create-event', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
+  const authHeader =
+    req.headers['x-access-token'] ||
+    req.headers['x-google-access-token'] ||
+    req.headers.authorization;
   let accessToken = '';
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     accessToken = authHeader.replace('Bearer ', '').trim();
+  } else if (typeof authHeader === 'string') {
+    accessToken = authHeader.trim();
   } else if (req.body?.access_token) {
     accessToken = String(req.body.access_token).trim();
   }
