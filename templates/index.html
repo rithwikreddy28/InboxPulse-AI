@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InboxPulse AI — KITSW WARRIOR | SaaSsum AI</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome / Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col antialiased">
+
+  <!-- Top Announcement Bar -->
+  <div class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white text-xs py-2 px-4 border-b border-indigo-700/50">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+          <i class="fa-solid fa-trophy mr-1 text-emerald-400"></i> HACKATHON PROTOTYPE
+        </span>
+        <span class="text-slate-300">Team: <strong class="text-white">KITSW WARRIOR</strong></span>
+        <span class="text-slate-500">•</span>
+        <span class="text-slate-300">Track: <strong class="text-indigo-300">SaaSsum AI (IT & AI)</strong></span>
+      </div>
+      <div class="flex items-center gap-3 text-slate-300">
+        <span class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          Engine: <strong class="text-white">Google Gemini 1.5/2.0 Flash</strong>
+        </span>
+        <span class="text-slate-500">•</span>
+        <button onclick="openOAuthModal()" class="hover:text-white transition flex items-center gap-1 text-xs text-indigo-300 hover:underline">
+          <i class="fa-brands fa-google text-xs"></i> Gmail OAuth Hook
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Primary Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <!-- Brand & Tagline -->
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
+            <i class="fa-solid fa-bolt-lightning text-xl"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-xl font-bold tracking-tight text-slate-900">InboxPulse <span class="text-indigo-600">AI</span></h1>
+              <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">v1.0-prototype</span>
+            </div>
+            <p class="text-xs text-slate-500">Autonomous Email Intelligence & Actionable Insight Agent</p>
+          </div>
+        </div>
+
+        <!-- Quick Top Metrics -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+          <div class="bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200">
+            <p class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total Emails</p>
+            <p id="statTotalEmails" class="text-base font-bold text-slate-800">0</p>
+          </div>
+          <div class="bg-red-50/80 px-3 py-1.5 rounded-lg border border-red-200">
+            <p class="text-[11px] font-medium text-red-600 uppercase tracking-wider">High Urgency</p>
+            <p id="statHighUrgency" class="text-base font-bold text-red-700">0</p>
+          </div>
+          <div class="bg-amber-50/80 px-3 py-1.5 rounded-lg border border-amber-200">
+            <p class="text-[11px] font-medium text-amber-600 uppercase tracking-wider">Action Req.</p>
+            <p id="statActionRequired" class="text-base font-bold text-amber-700">0</p>
+          </div>
+          <div class="bg-emerald-50/80 px-3 py-1.5 rounded-lg border border-emerald-200">
+            <p class="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">Open Tasks</p>
+            <p id="statPendingTasks" class="text-base font-bold text-emerald-700">0</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Controls & Action Toolbar -->
+  <section class="bg-white border-b border-slate-200 py-3 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <!-- Filter Tabs -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button onclick="setFilter('All')" id="filter-All" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow-xs">
+            <i class="fa-solid fa-inbox mr-1"></i> All Messages
+          </button>
+          <button onclick="setFilter('High')" id="filter-High" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 transition">
+            <i class="fa-solid fa-triangle-exclamation mr-1 text-red-500"></i> High Priority
+          </button>
+          <button onclick="setFilter('Action Required')" id="filter-Action Required" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-700 transition">
+            <i class="fa-solid fa-list-check mr-1 text-amber-500"></i> Needs Action
+          </button>
+          <button onclick="setFilter('FYI')" id="filter-FYI" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+            <i class="fa-solid fa-info-circle mr-1 text-slate-500"></i> FYI Only
+          </button>
+        </div>
+
+        <!-- Search & Action Buttons -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Search input -->
+          <div class="relative flex-1 sm:w-64">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+            <input 
+              type="text" 
+              id="searchInput" 
+              oninput="handleSearch(this.value)"
+              placeholder="Search sender, subject, tasks..." 
+              class="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+            />
+          </div>
+
+          <!-- Seed Demo Dataset -->
+          <button 
+            onclick="triggerSeedDemo()" 
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition flex items-center gap-1.5 shadow-xs"
+            title="Preload 5 realistic hackathon test emails">
+            <i class="fa-solid fa-database text-amber-600"></i>
+            <span>Load Demo Dataset</span>
+          </button>
+
+          <!-- Refresh / Sync -->
+          <button 
+            onclick="triggerFetchLive()" 
+            id="refreshBtn"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-xs">
+            <i class="fa-solid fa-arrows-rotate" id="refreshIcon"></i>
+            <span>Sync Inbox</span>
+          </button>
+
+          <!-- Paste Custom Email Modal Trigger -->
+          <button 
+            onclick="openCustomEmailModal()" 
+            class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1.5 shadow-xs">
+            <i class="fa-solid fa-plus"></i>
+            <span>Analyze Custom Email</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Layout -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Notice Banner if Empty -->
+    <div id="emptyState" class="hidden text-center py-16 bg-white rounded-2xl border border-slate-200 p-8 shadow-xs">
+      <div class="w-16 h-16 mx-auto mb-4 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 text-2xl">
+        <i class="fa-regular fa-envelope-open"></i>
+      </div>
+      <h3 class="text-base font-bold text-slate-800 mb-1">No emails processed yet</h3>
+      <p class="text-xs text-slate-500 max-w-md mx-auto mb-5">
+        Click below to load our pre-seeded judge evaluation dataset, or paste any real email to analyze in real-time with Google Gemini.
+      </p>
+      <div class="flex justify-center gap-3">
+        <button onclick="triggerSeedDemo()" class="px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 shadow-sm transition">
+          <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Load Pre-seeded Demo Emails
+        </button>
+        <button onclick="openCustomEmailModal()" class="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200 transition">
+          <i class="fa-solid fa-keyboard mr-1.5"></i> Paste Custom Email
+        </button>
+      </div>
+    </div>
+
+    <!-- Email Insights Grid -->
+    <div id="emailGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <!-- Dynamic email cards injected via JS -->
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>
+        <strong>InboxPulse AI</strong> — Engineered for <strong>SaaSsum AI</strong> by Team <strong>KITSW WARRIOR</strong>.
+      </div>
+      <div class="flex items-center gap-4 text-slate-400">
+        <span>SQLite Caching</span>
+        <span>•</span>
+        <span>Gemini JSON Guardrails</span>
+        <span>•</span>
+        <span>Gmail Read-Only Hook</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modal: Quick Reply Draft -->
+  <div id="replyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in duration-150">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">
+            <i class="fa-solid fa-reply"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">AI Suggested Reply Draft</h3>
+            <p id="replyModalRecipient" class="text-xs text-slate-500">To: recipient</p>
+          </div>
+        </div>
+        <button onclick="closeReplyModal()" class="text-slate-400 hover:text-slate-600 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Generated Response Draft:</label>
+        <textarea 
+          id="replyDraftText" 
+          rows="6" 
+          class="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+        ></textarea>
+      </div>
+
+      <div class="flex items-center justify-between pt-2">
+        <span id="copyFeedback" class="text-xs text-emerald-600 font-semibold opacity-0 transition-opacity">
+          <i class="fa-solid fa-check mr-1"></i> Copied to clipboard!
+        </span>
+        <div class="flex gap-2">
+          <button onclick="closeReplyModal()" class="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition">
+            Close
+          </button>
+          <button onclick="copyReplyText()" class="px-4 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition">
+            <i class="fa-regular fa-copy"></i>
+            <span>Copy Draft</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Custom Email Analyzer -->
+  <div id="customEmailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-sm">
+            <i class="fa-solid fa-microchip"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">Live Gemini Email Analysis</h3>
+            <p class="text-xs text-slate-500">Paste any raw email text to test the extraction pipeline</p>
+          </div>
+        </div>
+        <button onclick="closeCustomEmailModal()" class="text-slate-400 hover:text-slate-600 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="customEmailForm" onsubmit="handleCustomEmailSubmit(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Sender Name & Email:</label>
+          <input 
+            type="text" 
+            id="customSender" 
+            required 
+            placeholder="Alex Rivera &lt;alex@startup.io&gt;"
+            class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Subject Line:</label>
+          <input 
+            type="text" 
+            id="customSubject" 
+            required 
+            placeholder="Action Required: Contract signed, kickoff date confirmed"
+            class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Raw Email Body:</label>
+          <textarea 
+            id="customBody" 
+            required 
+            rows="5" 
+            placeholder="Paste raw email body here (include deadlines, asks, links, etc.)..."
+            class="w-full text-xs p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          ></textarea>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeCustomEmailModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
+            Cancel
+          </button>
+          <button type="submit" id="submitAnalyzeBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-sparkles"></i>
+            <span>Run Gemini Extraction</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Google OAuth / Gmail Info -->
+  <div id="oauthModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center text-sm">
+            <i class="fa-brands fa-google"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">Gmail OAuth 2.0 Integration Hook</h3>
+            <p class="text-xs text-slate-500">Live Ingestion Mode Settings</p>
+          </div>
+        </div>
+        <button onclick="closeOAuthModal()" class="text-slate-400 hover:text-slate-600 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-600">
+        <p>
+          InboxPulse AI includes native OAuth 2.0 configuration for Google Workspace with 
+          <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-700">gmail.readonly</code> scope.
+        </p>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+          <div class="flex justify-between">
+            <span class="text-slate-500">Mode:</span>
+            <span class="font-semibold text-emerald-600">Prototype Demo Mode Active</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Gemini LLM:</span>
+            <span class="font-semibold text-indigo-600">Active (Structured JSON)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Database:</span>
+            <span class="font-semibold text-slate-800">SQLite (inboxpulse.db)</span>
+          </div>
+        </div>
+        <p class="text-[11px] text-slate-500">
+          For judge evaluation without exposing personal email credentials, the <strong>Demo Ingestion Mode</strong> 
+          is pre-loaded with representative enterprise emergencies, scheduling requests, and notices.
+        </p>
+      </div>
+
+      <div class="mt-5 flex justify-end">
+        <button onclick="closeOAuthModal()" class="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
+          Got it
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Logic -->
+  <script>
+    let emailsData = [];
+    let currentFilter = 'All';
+    let currentSearch = '';
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadEmails();
+      updateStats();
+    });
+
+    async function loadEmails() {
+      try {
+        let url = `/api/emails?urgency=${encodeURIComponent(currentFilter)}`;
+        if (currentFilter === 'Action Required') {
+          url = `/api/emails?action=required`;
+        }
+        if (currentSearch) {
+          url += `&search=${encodeURIComponent(currentSearch)}`;
+        }
+
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.success) {
+          emailsData = data.emails;
+          renderGrid(emailsData);
+          updateStats();
+        }
+      } catch (err) {
+        console.error('Failed to load emails:', err);
+      }
+    }
+
+    async function updateStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('statTotalEmails').textContent = data.total_emails;
+          document.getElementById('statHighUrgency').textContent = data.high_urgency;
+          document.getElementById('statActionRequired').textContent = data.action_required;
+          document.getElementById('statPendingTasks').textContent = data.pending_tasks;
+        }
+      } catch (err) {
+        console.error('Stats error:', err);
+      }
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.className = 'filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition';
+      });
+
+      const activeBtn = document.getElementById(`filter-${filter}`);
+      if (activeBtn) {
+        if (filter === 'High') {
+          activeBtn.className = 'filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white shadow-xs';
+        } else if (filter === 'Action Required') {
+          activeBtn.className = 'filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 text-white shadow-xs';
+        } else {
+          activeBtn.className = 'filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow-xs';
+        }
+      }
+      loadEmails();
+    }
+
+    let searchDebounce;
+    function handleSearch(val) {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        currentSearch = val;
+        loadEmails();
+      }, 250);
+    }
+
+    async function triggerSeedDemo() {
+      try {
+        const btn = event.currentTarget;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing...`;
+        btn.disabled = true;
+
+        const res = await fetch('/api/seed-demo', { method: 'POST' });
+        const data = await res.json();
+        
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+        if (data.success) {
+          loadEmails();
+          updateStats();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function triggerFetchLive() {
+      const icon = document.getElementById('refreshIcon');
+      icon.classList.add('fa-spin');
+      try {
+        await fetch('/api/fetch-live', { method: 'POST' });
+        await loadEmails();
+        await updateStats();
+      } finally {
+        setTimeout(() => icon.classList.remove('fa-spin'), 600);
+      }
+    }
+
+    async function toggleTask(emailId, taskId, isChecked) {
+      try {
+        const res = await fetch('/api/tasks/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email_id: emailId, task_id: taskId, completed: isChecked })
+        });
+        const data = await res.json();
+        if (data.success) {
+          updateStats();
+          // Visual update
+          const taskLabel = document.getElementById(`label_${emailId}_${taskId}`);
+          if (taskLabel) {
+            if (isChecked) {
+              taskLabel.classList.add('line-through', 'text-slate-400');
+            } else {
+              taskLabel.classList.remove('line-through', 'text-slate-400');
+            }
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function renderGrid(emails) {
+      const grid = document.getElementById('emailGrid');
+      const empty = document.getElementById('emptyState');
+
+      if (!emails || emails.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      grid.innerHTML = emails.map(email => {
+        // Urgency styling
+        let urgencyBadge = '';
+        let cardBorder = 'border-slate-200 hover:border-slate-300';
+        if (email.urgency === 'High') {
+          urgencyBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1"><i class="fa-solid fa-fire text-red-500"></i> HIGH URGENCY</span>`;
+          cardBorder = 'border-red-200/80 hover:border-red-300 shadow-xs shadow-red-500/5';
+        } else if (email.urgency === 'Medium') {
+          urgencyBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1"><i class="fa-solid fa-clock text-amber-500"></i> MEDIUM</span>`;
+        } else if (email.urgency === 'Low') {
+          urgencyBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 border border-blue-200 flex items-center gap-1"><i class="fa-solid fa-arrow-down text-blue-500"></i> LOW</span>`;
+        } else {
+          urgencyBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1"><i class="fa-solid fa-bell text-slate-400"></i> FYI</span>`;
+        }
+
+        // Deadline tag
+        const deadlineTag = email.deadline ? `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+            <i class="fa-regular fa-calendar-xmark text-rose-500"></i> Due: ${email.deadline}
+          </span>
+        ` : '';
+
+        // Tasks list
+        const tasks = email.tasks || [];
+        const taskHtml = tasks.length > 0 ? `
+          <div class="mt-3.5 bg-slate-50/80 rounded-xl p-3 border border-slate-200/80">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-list-check text-indigo-600"></i> Actionable Checklist (${tasks.length})
+              </span>
+              <span class="text-[10px] text-slate-400">Click to cross-off</span>
+            </div>
+            <div class="space-y-1.5">
+              ${tasks.map(t => `
+                <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer hover:text-slate-900 select-none">
+                  <input 
+                    type="checkbox" 
+                    ${t.completed ? 'checked' : ''}
+                    onchange="toggleTask(${email.id}, '${t.id || t.text}', this.checked)"
+                    class="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                  />
+                  <span id="label_${email.id}_${t.id || t.text}" class="${t.completed ? 'line-through text-slate-400' : ''}">
+                    ${t.text}
+                  </span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        ` : '';
+
+        // Extracted entities
+        const entities = email.key_entities || {};
+        const links = entities.links || [];
+        const people = entities.people || [];
+
+        return `
+          <div class="bg-white rounded-2xl border ${cardBorder} p-5 shadow-xs transition-all duration-200 flex flex-col justify-between">
+            <div>
+              <!-- Header Row -->
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    ${urgencyBadge}
+                    ${deadlineTag}
+                    <span class="text-[11px] text-slate-400 ml-auto">${email.date}</span>
+                  </div>
+                  <h3 class="text-sm font-bold text-slate-900 truncate leading-snug" title="${email.subject}">
+                    ${email.subject}
+                  </h3>
+                  <p class="text-xs text-slate-500 truncate mt-0.5">
+                    From: <span class="font-medium text-slate-700">${email.sender}</span>
+                  </p>
+                </div>
+              </div>
+
+              <!-- 2-Sentence TL;DR Box -->
+              <div class="mt-3 bg-gradient-to-r from-indigo-50/70 to-violet-50/40 rounded-xl p-3 border border-indigo-100">
+                <div class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-900 mb-1">
+                  <i class="fa-solid fa-wand-magic-sparkles text-indigo-600"></i>
+                  <span>AI Executive Summary (TL;DR)</span>
+                </div>
+                <p class="text-xs text-indigo-950/85 leading-relaxed font-normal">
+                  ${email.summary || 'Summary pending processing...'}
+                </p>
+              </div>
+
+              <!-- Tasks Checklist -->
+              ${taskHtml}
+
+              <!-- Entity Pills (if any) -->
+              ${(links.length > 0 || people.length > 0) ? `
+                <div class="mt-3 flex flex-wrap gap-1.5 items-center">
+                  ${links.map(l => `
+                    <a href="${l}" target="_blank" class="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded-md truncate max-w-[200px] transition">
+                      <i class="fa-solid fa-link text-slate-400"></i> ${l}
+                    </a>
+                  `).join('')}
+                  ${people.map(p => `
+                    <span class="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md">
+                      <i class="fa-regular fa-user text-purple-400"></i> ${p}
+                    </span>
+                  `).join('')}
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- Card Actions -->
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              <button 
+                onclick="toggleRawBody(${email.id})" 
+                class="text-xs text-slate-500 hover:text-slate-800 transition flex items-center gap-1 font-medium">
+                <i class="fa-regular fa-file-lines"></i>
+                <span id="rawToggleText_${email.id}">View Raw</span>
+              </button>
+
+              <button 
+                onclick="openReplyModal(${email.id})" 
+                class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-xs">
+                <i class="fa-solid fa-reply"></i>
+                <span>Quick Reply Draft</span>
+              </button>
+            </div>
+
+            <!-- Collapsible Raw Body Drawer -->
+            <div id="rawBody_${email.id}" class="hidden mt-3 p-3 bg-slate-900 text-slate-200 rounded-xl text-xs font-mono whitespace-pre-wrap max-h-48 overflow-y-auto custom-scroll border border-slate-800">
+              ${email.raw_body}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleRawBody(id) {
+      const drawer = document.getElementById(`rawBody_${id}`);
+      const btnText = document.getElementById(`rawToggleText_${id}`);
+      if (drawer.classList.contains('hidden')) {
+        drawer.classList.remove('hidden');
+        btnText.textContent = 'Hide Raw';
+      } else {
+        drawer.classList.add('hidden');
+        btnText.textContent = 'View Raw';
+      }
+    }
+
+    // Reply Modal
+    let activeReplyEmail = null;
+    function openReplyModal(emailId) {
+      const email = emailsData.find(e => e.id === emailId);
+      if (!email) return;
+      activeReplyEmail = email;
+
+      document.getElementById('replyModalRecipient').textContent = `To: ${email.sender}`;
+      document.getElementById('replyDraftText').value = email.suggested_reply || 'Thank you for your email. I am currently reviewing the details and will get back to you shortly.';
+      document.getElementById('copyFeedback').style.opacity = '0';
+      document.getElementById('replyModal').classList.remove('hidden');
+    }
+
+    function closeReplyModal() {
+      document.getElementById('replyModal').classList.add('hidden');
+    }
+
+    function copyReplyText() {
+      const text = document.getElementById('replyDraftText').value;
+      navigator.clipboard.writeText(text).then(() => {
+        const feedback = document.getElementById('copyFeedback');
+        feedback.style.opacity = '1';
+        setTimeout(() => feedback.style.opacity = '0', 2500);
+      });
+    }
+
+    // Custom Email Modal
+    function openCustomEmailModal() {
+      document.getElementById('customEmailModal').classList.remove('hidden');
+    }
+
+    function closeCustomEmailModal() {
+      document.getElementById('customEmailModal').classList.add('hidden');
+    }
+
+    async function handleCustomEmailSubmit(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitAnalyzeBtn');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Running Gemini...`;
+      btn.disabled = true;
+
+      const sender = document.getElementById('customSender').value;
+      const subject = document.getElementById('customSubject').value;
+      const body = document.getElementById('customBody').value;
+
+      try {
+        const res = await fetch('/api/email/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sender, subject, body })
+        });
+        const data = await res.json();
+        
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+        if (data.success) {
+          closeCustomEmailModal();
+          document.getElementById('customEmailForm').reset();
+          loadEmails();
+          updateStats();
+        } else {
+          alert('Processing error: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        console.error(err);
+      }
+    }
+
+    // OAuth Modal
+    function openOAuthModal() {
+      document.getElementById('oauthModal').classList.remove('hidden');
+    }
+
+    function closeOAuthModal() {
+      document.getElementById('oauthModal').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

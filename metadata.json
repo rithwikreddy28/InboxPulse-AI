@@ -1,0 +1,6 @@
+{
+  "name": "InboxPulse AI - Email Intelligence Agent",
+  "description": "Lightweight AI agent that summarizes Gmail messages into actionable insights, interactive task checklists, and auto-generated reply drafts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
