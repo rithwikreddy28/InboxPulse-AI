@@ -35,11 +35,10 @@ export const createBaseProvider = () => {
   return provider;
 };
 
-// Full provider requesting Gmail Read-Only & Send
+// Full provider requesting Gmail Read-Only
 export const createGmailProvider = () => {
   const provider = new GoogleAuthProvider();
   provider.addScope(GMAIL_READ_SCOPE);
-  provider.addScope(GMAIL_SEND_SCOPE);
   provider.addScope('openid');
   provider.addScope('https://www.googleapis.com/auth/userinfo.email');
   provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
@@ -165,10 +164,17 @@ export const signInWithGmailScope = async (): Promise<SignInResult | null> => {
     const errCode = gmailErr?.code || '';
     const errMsg = gmailErr?.message || '';
 
-    // Check if blocked by Google verification / restricted testing mode or closed
+    if (
+      errCode === 'auth/popup-closed-by-user' ||
+      errCode === 'auth/cancelled-popup-request' ||
+      errCode === 'auth/user-cancelled'
+    ) {
+      return null;
+    }
+
+    // Check if blocked by Google verification / restricted testing mode
     const isAccessDenied =
       errCode === 'auth/access-denied' ||
-      errCode === 'auth/user-cancelled' ||
       errCode === 'auth/operation-not-allowed' ||
       errMsg.includes('access_denied') ||
       errMsg.includes('403') ||
@@ -177,15 +183,8 @@ export const signInWithGmailScope = async (): Promise<SignInResult | null> => {
     if (isAccessDenied) {
       console.warn('[OAuth] Live Gmail scope restricted by Google (unverified app / test user required).');
       throw new Error(
-        'Google restricted live Gmail access because this preview project requires OAuth test user authorization in Google Cloud Console. You can use Universal Sign-In and paste emails directly for instant AI analysis.'
+        'Google restricted live Gmail access because this preview project requires OAuth test user authorization in Google Cloud Console. You can use Demo Sandbox Mode or paste emails directly for instant AI analysis.'
       );
-    }
-
-    if (
-      errCode === 'auth/popup-closed-by-user' ||
-      errCode === 'auth/cancelled-popup-request'
-    ) {
-      return null;
     }
 
     if (errCode === 'auth/popup-blocked') {
@@ -199,11 +198,10 @@ export const signInWithGmailScope = async (): Promise<SignInResult | null> => {
 };
 
 /**
- * Standard googleSignIn: Authenticates user safely using Universal Google Auth
- * Guaranteed to succeed without access-denied or popup redirect errors.
+ * Standard googleSignIn: Connects with Live Gmail Scope so real emails can be synced
  */
 export const googleSignIn = async (): Promise<SignInResult | null> => {
-  return signInWithUniversal();
+  return signInWithGmailScope();
 };
 
 export const requestGmailScope = async (): Promise<string | null> => {

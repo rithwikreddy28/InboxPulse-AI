@@ -50,6 +50,41 @@ export interface TaskItem {
   id: string;
   text: string;
   completed: boolean;
+  priority: 'High' | 'Medium' | 'Low';
+}
+
+export function inferTaskPriority(taskText: string, urgency?: string): 'High' | 'Medium' | 'Low' {
+  const lower = (taskText || '').toLowerCase();
+  if (
+    lower.includes('urgent') ||
+    lower.includes('immediately') ||
+    lower.includes('asap') ||
+    lower.includes('critical') ||
+    lower.includes('blocker') ||
+    lower.includes('payment') ||
+    lower.includes('pay') ||
+    lower.includes('invoice') ||
+    lower.includes('failed') ||
+    lower.includes('today') ||
+    lower.includes('eod') ||
+    urgency === 'High'
+  ) {
+    return 'High';
+  }
+  if (
+    lower.includes('review') ||
+    lower.includes('confirm') ||
+    lower.includes('update') ||
+    lower.includes('send') ||
+    lower.includes('reply') ||
+    lower.includes('reschedule') ||
+    lower.includes('submit') ||
+    lower.includes('prepare') ||
+    urgency === 'Medium'
+  ) {
+    return 'Medium';
+  }
+  return 'Low';
 }
 
 export interface KeyEntities {
@@ -517,6 +552,16 @@ ${truncatedBody}`;
 // REST API ROUTES
 // ==========================================
 
+// GET /api/health
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    service: 'InboxPulse AI',
+    timestamp: new Date().toISOString(),
+    emails_count: emailDatabase.length,
+  });
+});
+
 // GET /api/emails
 app.get('/api/emails', (req: Request, res: Response) => {
   const urgencyFilter = (req.query.urgency as string) || 'All';
@@ -669,6 +714,13 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
       messageHeadersList = listData.messages || [];
     }
 
+    // Strip mock/sample emails so user only sees their real Gmail messages
+    if (shouldClearDemo) {
+      emailDatabase = emailDatabase.filter(
+        (e) => !e.id.startsWith('sample_') && !e.id.startsWith('demo_') && !e.id.startsWith('mock_')
+      );
+    }
+
     if (messageHeadersList.length === 0) {
       return res.json({
         success: true,
@@ -676,13 +728,6 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
         message: 'No messages found in primary inbox.',
         emails: emailDatabase,
       });
-    }
-
-    // Strip mock/sample emails so user only sees their real Gmail messages
-    if (shouldClearDemo) {
-      emailDatabase = emailDatabase.filter(
-        (e) => !e.id.startsWith('sample_') && !e.id.startsWith('demo_') && !e.id.startsWith('mock_')
-      );
     }
 
     const newAnalyzedEmails: EmailItem[] = [];
@@ -759,11 +804,18 @@ app.post('/api/gmail/sync', async (req: Request, res: Response) => {
             raw_body: bodyText,
             summary: analysis.summary,
             action_required: analysis.action_required,
-            tasks: analysis.tasks.map((t: string, idx: number) => ({
-              id: `task_${messageId}_${idx + 1}`,
-              text: t,
-              completed: false,
-            })),
+            tasks: analysis.tasks.map((t: any, idx: number) => {
+              const text = typeof t === 'string' ? t : (t?.text || String(t));
+              const priority = (typeof t === 'object' && (t?.priority === 'High' || t?.priority === 'Medium' || t?.priority === 'Low'))
+                ? t.priority
+                : inferTaskPriority(text, analysis.urgency);
+              return {
+                id: `task_${messageId}_${idx + 1}`,
+                text,
+                completed: false,
+                priority,
+              };
+            }),
             urgency: analysis.urgency,
             deadline: analysis.deadline,
             key_entities: analysis.key_entities,
@@ -845,11 +897,18 @@ app.post('/api/user/sync-sample', async (req: Request, res: Response) => {
         raw_body: sample.body,
         summary: analysis.summary,
         action_required: analysis.action_required,
-        tasks: analysis.tasks.map((t: string, idx: number) => ({
-          id: `task_${customId}_${idx + 1}`,
-          text: t,
-          completed: false,
-        })),
+        tasks: analysis.tasks.map((t: any, idx: number) => {
+          const text = typeof t === 'string' ? t : (t?.text || String(t));
+          const priority = (typeof t === 'object' && (t?.priority === 'High' || t?.priority === 'Medium' || t?.priority === 'Low'))
+            ? t.priority
+            : inferTaskPriority(text, analysis.urgency);
+          return {
+            id: `task_${customId}_${idx + 1}`,
+            text,
+            completed: false,
+            priority,
+          };
+        }),
         urgency: analysis.urgency,
         deadline: analysis.deadline,
         key_entities: analysis.key_entities,
@@ -1384,11 +1443,18 @@ app.post('/api/email/process', async (req: Request, res: Response) => {
       raw_body: body,
       summary: analysis.summary,
       action_required: analysis.action_required,
-      tasks: analysis.tasks.map((t: string, idx: number) => ({
-        id: `task_${customId}_${idx + 1}`,
-        text: t,
-        completed: false,
-      })),
+      tasks: analysis.tasks.map((t: any, idx: number) => {
+        const text = typeof t === 'string' ? t : (t?.text || String(t));
+        const priority = (typeof t === 'object' && (t?.priority === 'High' || t?.priority === 'Medium' || t?.priority === 'Low'))
+          ? t.priority
+          : inferTaskPriority(text, analysis.urgency);
+        return {
+          id: `task_${customId}_${idx + 1}`,
+          text,
+          completed: false,
+          priority,
+        };
+      }),
       urgency: analysis.urgency,
       deadline: analysis.deadline,
       key_entities: analysis.key_entities,

@@ -62,12 +62,15 @@ import {
   MessageSquare,
   CheckSquare,
   Square,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 interface TaskItem {
   id: string;
   text: string;
   completed: boolean;
+  priority?: 'High' | 'Medium' | 'Low';
 }
 
 interface KeyEntities {
@@ -229,6 +232,9 @@ function MainApp() {
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
   const [selectedEmailIds, setSelectedEmailIds] = useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
+
+  // Fullscreen Email Reader Modal
+  const [fullscreenEmail, setFullscreenEmail] = useState<EmailItem | null>(null);
 
   // Dark mode
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -499,21 +505,32 @@ function MainApp() {
       async (authUser, authToken, hasGmail) => {
         setUser(authUser);
         setAuthLoading(false);
-        if (authToken) {
+        if (authToken && hasGmail) {
           setToken(authToken);
-          setHasGmailScope(hasGmail);
-          if (hasGmail) {
+          setHasGmailScope(true);
+          await syncGmailInbox(authToken);
+        } else if (authUser) {
+          setToken(authToken);
+          setHasGmailScope(Boolean(hasGmail));
+          if (authToken && hasGmail) {
             await syncGmailInbox(authToken);
           } else {
-            await syncUserSampleData(authUser.email || undefined, authUser.displayName || undefined);
+            // Keep existing messages if already loaded
+            try {
+              const res = await fetch('/api/emails');
+              const data = await res.json();
+              if (data.success && data.emails && data.emails.length > 0) {
+                setEmails(data.emails);
+              } else {
+                await syncUserSampleData(authUser.email || undefined, authUser.displayName || undefined);
+              }
+            } catch {
+              await fetchCachedEmails();
+            }
           }
         } else {
           setHasGmailScope(false);
-          if (authUser?.email) {
-            await syncUserSampleData(authUser.email, authUser.displayName || undefined);
-          } else {
-            await fetchCachedEmails();
-          }
+          await fetchCachedEmails();
         }
       },
       () => {
@@ -551,7 +568,7 @@ function MainApp() {
     }
   };
 
-  // Live Gmail Scope Sign-In (Attempts direct Gmail read-only access)
+  // Live Gmail Scope Sign-In (Direct Gmail read-only access to ingest real inbox)
   const handleLiveGmailSignIn = async () => {
     try {
       setIsLoggingIn(true);
@@ -568,25 +585,33 @@ function MainApp() {
           setAuthNotice(result.notice);
         }
 
-        if (result.accessToken) {
+        if (result.accessToken && result.hasGmailScope) {
           await syncGmailInbox(result.accessToken);
         } else {
-          // If Gmail scope was restricted by Google, load their personalized workspace
+          // If Gmail scope was restricted by Google, load personalized sandbox
           await syncUserSampleData(result.user.email || undefined, result.user.displayName || undefined);
         }
       }
     } catch (err: any) {
       console.error('Gmail Sign-in error:', err);
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.code === 'auth/user-cancelled'
+      ) {
+        return;
+      }
       setSyncError(
-        'Direct Gmail access was not granted by Google. You can sign in using Universal Google Auth below.'
+        'Direct Gmail access was not granted by Google. You can sign in using Universal Demo Mode or explore sample intelligence.'
       );
+      setShowVerificationModal(true);
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  // Standard Google Sign-In: Authenticates any Google account instantly with zero barriers
-  const handleGoogleSignIn = handleUniversalSignIn;
+  // Standard Google Sign-In: Connects with Live Gmail to sync real emails!
+  const handleGoogleSignIn = handleLiveGmailSignIn;
 
   // Explicitly prompt for Gmail scope if user wants to upgrade permissions
   const handleUpgradeGmailScope = async () => {
@@ -602,6 +627,13 @@ function MainApp() {
       }
     } catch (err: any) {
       console.warn('Upgrade Gmail Scope rejected or restricted:', err);
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.code === 'auth/user-cancelled'
+      ) {
+        return;
+      }
       setShowVerificationModal(true);
     } finally {
       setSyncing(false);
@@ -641,7 +673,7 @@ function MainApp() {
     } else if (user) {
       await handleUpgradeGmailScope();
     } else {
-      await syncUserSampleData();
+      await handleLiveGmailSignIn();
     }
   };
 
@@ -723,6 +755,16 @@ function MainApp() {
         return e;
       })
     );
+
+    setFullscreenEmail((prev) => {
+      if (prev && prev.id === emailId) {
+        return {
+          ...prev,
+          tasks: prev.tasks.map((t) => (t.id === taskId || t.text === taskId ? { ...t, completed } : t)),
+        };
+      }
+      return prev;
+    });
 
     setStats((prev) => ({
       ...prev,
@@ -1276,6 +1318,123 @@ function MainApp() {
     }
   };
 
+  // Helper: Detect if deadline is approaching (within the next 24 hours)
+  const isDeadlineApproaching = (deadline: string | null | undefined): boolean => {
+    if (!deadline) return false;
+    const str = deadline.trim().toLowerCase();
+
+    // High-imminence natural language keywords
+    if (
+      str.includes('today') ||
+      str.includes('tonight') ||
+      str.includes('within 24') ||
+      str.includes('24h') ||
+      str.includes('asap') ||
+      str.includes('immediately') ||
+      str.includes('eod') ||
+      str.includes('in 1 hour') ||
+      str.includes('in 2 hours') ||
+      str.includes('in 3 hours') ||
+      str.includes('in 4 hours') ||
+      str.includes('in 5 hours') ||
+      str.includes('in 6 hours') ||
+      str.includes('in 12 hours') ||
+      str.includes('urgent') ||
+      str.includes('critical')
+    ) {
+      return true;
+    }
+
+    // Date timestamp comparison
+    const parsed = Date.parse(deadline);
+    if (!isNaN(parsed)) {
+      const now = Date.now();
+      const diffHours = (parsed - now) / (1000 * 60 * 60);
+      if (diffHours >= -12 && diffHours <= 24) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Helper: Infer task priority if not explicitly populated
+  const inferTaskPriority = (taskText: string, urgency?: string): 'High' | 'Medium' | 'Low' => {
+    const lower = (taskText || '').toLowerCase();
+    if (
+      lower.includes('urgent') ||
+      lower.includes('immediately') ||
+      lower.includes('asap') ||
+      lower.includes('critical') ||
+      lower.includes('blocker') ||
+      lower.includes('payment') ||
+      lower.includes('pay') ||
+      lower.includes('invoice') ||
+      lower.includes('failed') ||
+      lower.includes('today') ||
+      lower.includes('eod') ||
+      urgency === 'High'
+    ) {
+      return 'High';
+    }
+    if (
+      lower.includes('review') ||
+      lower.includes('confirm') ||
+      lower.includes('update') ||
+      lower.includes('send') ||
+      lower.includes('reply') ||
+      lower.includes('reschedule') ||
+      lower.includes('submit') ||
+      lower.includes('prepare') ||
+      urgency === 'Medium'
+    ) {
+      return 'Medium';
+    }
+    return 'Low';
+  };
+
+  // Helper: Render Task Priority Badge
+  const renderTaskPriorityBadge = (priority?: 'High' | 'Medium' | 'Low', text?: string, emailUrgency?: string) => {
+    const p = priority || (text ? inferTaskPriority(text, emailUrgency) : 'Medium');
+    switch (p) {
+      case 'High':
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800 shrink-0">
+            High
+          </span>
+        );
+      case 'Medium':
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800 shrink-0">
+            Med
+          </span>
+        );
+      case 'Low':
+      default:
+        return (
+          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 shrink-0">
+            Low
+          </span>
+        );
+    }
+  };
+
+  // Helper: Extract domain from URL for Big Links
+  const getDomain = (url: string) => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return url.split('/')[2] || url;
+    }
+  };
+
+  // Helper: Extract all links from both entities and raw body
+  const extractAllLinks = (item: EmailItem): string[] => {
+    const fromEntities = item.key_entities?.links || [];
+    const fromBody = (item.raw_body?.match(/https?:\/\/[^\s<>"')]+/g) || []);
+    return Array.from(new Set([...fromEntities, ...fromBody]));
+  };
+
   // Extract all unique tags across emails
   const allUniqueTags = Array.from(
     new Set(
@@ -1590,10 +1749,19 @@ function MainApp() {
                     onClick={handleGoogleSignIn}
                     disabled={isLoggingIn}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-                    title="Sign in with Google to sync your live inbox"
+                    title="Sign in with Google to sync your live Gmail inbox"
                   >
                     <Mail className="w-3.5 h-3.5" />
                     <span>{isLoggingIn ? 'Connecting...' : 'Sign in with Google'}</span>
+                  </button>
+                  <button
+                    onClick={handleUniversalSignIn}
+                    disabled={isLoggingIn}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-xl transition cursor-pointer"
+                    title="Test instantly with pre-loaded sample data"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Sandbox Demo</span>
                   </button>
                 </div>
               )}
@@ -2033,7 +2201,7 @@ function MainApp() {
               Sign in with any Google account or paste any email directly to extract 2-sentence executive summaries, detect urgency, cross off checklists, and generate context-calibrated response drafts with Google Gemini.
             </p>
 
-            {/* Action Buttons: Sign in with Google or Paste Email */}
+            {/* Action Buttons: Sign in with Google, Try Sandbox, or Paste Email */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <button
                 onClick={handleGoogleSignIn}
@@ -2041,12 +2209,22 @@ function MainApp() {
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-2xl shadow-md hover:shadow-lg transition-all transform active:scale-98 cursor-pointer disabled:opacity-50"
               >
                 <Mail className="w-4 h-4" />
-                <span>{isLoggingIn ? 'Connecting...' : 'Sign in with Google & Sync Inbox'}</span>
+                <span>{isLoggingIn ? 'Connecting...' : 'Sign in with Google & Sync Live Inbox'}</span>
+              </button>
+
+              <button
+                onClick={handleUniversalSignIn}
+                disabled={isLoggingIn}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-2xl border border-slate-200 transition cursor-pointer"
+                title="Explore immediately with pre-loaded demo intelligence"
+              >
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>Try Demo Sandbox</span>
               </button>
 
               <button
                 onClick={() => setShowManualModal(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-2xl border border-slate-200 transition cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-2xl border border-slate-200 transition cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4 text-indigo-600" />
                 <span>Paste Email for Analysis</span>
@@ -2142,6 +2320,7 @@ function MainApp() {
               const isExpanded = expandedRawIds.includes(email.id);
               const isUnread = !email.is_read;
               const isSelected = selectedEmailIds.includes(email.id);
+              const isDeadlineNear = isDeadlineApproaching(email.deadline);
 
               return (
                 <div
@@ -2156,7 +2335,9 @@ function MainApp() {
                   } ${
                     darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
                   } ${
-                    isSelected
+                    isDeadlineNear
+                      ? 'ring-2 ring-rose-500/80 border-rose-300 dark:border-rose-700 shadow-rose-500/10'
+                      : isSelected
                       ? 'ring-2 ring-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-md'
                       : isUnread
                       ? 'ring-2 ring-blue-500/30'
@@ -2172,7 +2353,20 @@ function MainApp() {
                   }`}
                 >
                   <div>
-                    {/* Header: Select Checkbox, Priority badge, Read status, Deadline, Calendar link, Date */}
+                    {/* Visual Warning: Imminent Deadline (<24h) Banner */}
+                    {isDeadlineNear && (
+                      <div className="flex items-center justify-between px-3.5 py-1.5 -mx-5 -mt-5 mb-3.5 bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 text-white rounded-t-2xl shadow-sm animate-pulse">
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                          <AlertTriangle className="w-3.5 h-3.5 text-yellow-200 shrink-0" />
+                          <span>⚠️ DEADLINE APPROACHING: Due within &lt; 24 Hours!</span>
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-black/25 px-2 py-0.5 rounded">
+                          {email.deadline}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Header: Select Checkbox, Priority badge, Read status, Deadline, Calendar link, Date, Fullscreen */}
                     <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Select Checkbox (Visible when Select Multiple is toggled) */}
@@ -2224,8 +2418,20 @@ function MainApp() {
 
                         {email.deadline && (
                           <div className="flex items-center gap-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                              <Calendar className="w-3 h-3 text-rose-500" /> Due: {email.deadline}
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold ${
+                                isDeadlineNear
+                                  ? 'bg-rose-100 text-rose-800 border-2 border-rose-300 ring-2 ring-rose-400/30 animate-pulse font-bold'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              <Calendar className={`w-3 h-3 ${isDeadlineNear ? 'text-rose-600' : 'text-rose-500'}`} />
+                              <span>Due: {email.deadline}</span>
+                              {isDeadlineNear && (
+                                <span className="ml-0.5 px-1 py-0.2 bg-rose-600 text-white text-[9px] font-black rounded uppercase">
+                                  &lt;24h Warning
+                                </span>
+                              )}
                             </span>
                             <button
                               onClick={() => handleAddToCalendar(email)}
@@ -2239,7 +2445,19 @@ function MainApp() {
                           </div>
                         )}
                       </div>
-                      <span className="text-[11px] text-slate-400 font-medium">{email.date}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-400 font-medium">{email.date}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFullscreenEmail(email);
+                          }}
+                          className="p-1 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          title="Open in Fullscreen Reader"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Auto-Category & Sentiment Badges */}
@@ -2261,14 +2479,14 @@ function MainApp() {
                       <div>
                         <h3
                           className={`text-sm leading-snug line-clamp-2 ${
-                            isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'
+                            isUnread ? 'font-bold text-slate-900 dark:text-white' : 'font-semibold text-slate-700 dark:text-slate-200'
                           }`}
                           title={email.subject}
                         >
                           {email.subject}
                         </h3>
                         <p className="text-xs text-slate-500 truncate mt-0.5">
-                          From: <span className="font-medium text-slate-700">{email.sender}</span>
+                          From: <span className="font-medium text-slate-700 dark:text-slate-300">{email.sender}</span>
                         </p>
                       </div>
                     </div>
@@ -2317,47 +2535,51 @@ function MainApp() {
                     </div>
 
                     {/* 2-Sentence TL;DR Box */}
-                    <div className="mt-3.5 bg-gradient-to-r from-indigo-50/70 via-indigo-50/40 to-slate-50 rounded-xl p-3 border border-indigo-100">
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-900 mb-1">
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <div className="mt-3 bg-gradient-to-r from-indigo-50/70 via-indigo-50/40 to-slate-50 dark:from-slate-800 dark:to-slate-800/60 rounded-xl p-3 border border-indigo-100 dark:border-slate-700">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-900 dark:text-indigo-300 mb-1">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>AI Executive Summary (TL;DR)</span>
                       </div>
-                      <p className="text-xs text-indigo-950/85 leading-relaxed">
+                      <p className="text-xs text-indigo-950/85 dark:text-slate-200 leading-relaxed">
                         {email.summary || 'Summary generated by InboxPulse AI.'}
                       </p>
                     </div>
 
-                    {/* Actionable Tasks Checklist */}
+                    {/* Actionable Tasks Checklist (Compact Small View with Priority Badges) */}
                     {email.tasks && email.tasks.length > 0 && (
-                      <div className="mt-3.5 bg-slate-50/80 rounded-xl p-3 border border-slate-200/80">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                            <ListTodo className="w-3.5 h-3.5 text-indigo-600" /> Actionable Checklist (
-                            {email.tasks.length})
+                      <div className="mt-2.5 bg-slate-50/90 dark:bg-slate-800/60 rounded-lg p-2 border border-slate-200/80 dark:border-slate-700/70">
+                        <div className="flex items-center justify-between mb-1.5 px-0.5">
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                            <ListTodo className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <span>Actionable Checklist ({email.tasks.length})</span>
                           </span>
-                          <span className="text-[10px] text-slate-400">Click to cross-off</span>
+                          <span className="text-[9px] text-slate-400">Click to cross-off</span>
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {email.tasks.map((task) => (
                             <label
                               key={task.id}
-                              className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer hover:text-slate-900 select-none group"
+                              className="flex items-center justify-between gap-1.5 text-[11px] text-slate-700 dark:text-slate-200 cursor-pointer hover:text-slate-900 dark:hover:text-white select-none group py-0.5 px-1 rounded hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition"
                             >
-                              <input
-                                type="checkbox"
-                                checked={task.completed}
-                                onChange={(e) => toggleTask(email.id, task.id, e.target.checked)}
-                                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
-                              />
-                              <span
-                                className={`${
-                                  task.completed
-                                    ? 'line-through text-slate-400'
-                                    : 'group-hover:text-slate-900'
-                                }`}
-                              >
-                                {task.text}
-                              </span>
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={task.completed}
+                                  onChange={(e) => toggleTask(email.id, task.id, e.target.checked)}
+                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3 w-3 cursor-pointer shrink-0"
+                                />
+                                <span
+                                  className={`truncate ${
+                                    task.completed
+                                      ? 'line-through text-slate-400 dark:text-slate-500'
+                                      : 'group-hover:text-slate-900 dark:group-hover:text-white'
+                                  }`}
+                                  title={task.text}
+                                >
+                                  {task.text}
+                                </span>
+                              </div>
+                              {renderTaskPriorityBadge(task.priority, task.text, email.urgency)}
                             </label>
                           ))}
                         </div>
@@ -2395,11 +2617,20 @@ function MainApp() {
                   </div>
 
                   {/* Footer Action Row */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setFullscreenEmail(email)}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition flex items-center gap-1 font-semibold cursor-pointer"
+                        title="Open Fullscreen Reader with Big Interactive Links"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Fullscreen</span>
+                      </button>
+
                       <button
                         onClick={() => toggleRawBody(email.id)}
-                        className="text-xs text-slate-500 hover:text-slate-800 transition flex items-center gap-1 font-medium"
+                        className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition flex items-center gap-1 font-medium"
                       >
                         <FileText className="w-3.5 h-3.5 text-slate-400" />
                         <span>{isExpanded ? 'Hide Raw Body' : 'View Raw Body'}</span>
@@ -2431,9 +2662,9 @@ function MainApp() {
 
                     <button
                       onClick={() => openReplyModal(email)}
-                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
+                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
                     >
-                      <Send className="w-3 h-3 text-indigo-600" />
+                      <Send className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                       <span>Quick Reply Draft</span>
                     </button>
                   </div>
@@ -3502,6 +3733,372 @@ function MainApp() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Fullscreen Email Reader Modal with Big Links and Compact Actionable Checklist */}
+      {fullscreenEmail && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 z-50 animate-in fade-in">
+          <div
+            className={`w-full max-w-5xl h-[94vh] flex flex-col rounded-3xl shadow-2xl border overflow-hidden ${
+              darkMode ? 'bg-slate-900 border-slate-750 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            {/* Fullscreen Modal Header */}
+            <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    {/* Urgency Badge */}
+                    {fullscreenEmail.urgency === 'High' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-rose-50 text-rose-700 border border-rose-300 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                        <span>Priority: High</span>
+                      </span>
+                    ) : fullscreenEmail.urgency === 'Medium' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Priority: Medium</span>
+                      </span>
+                    ) : fullscreenEmail.urgency === 'Low' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Priority: Low</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                        <Info className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Priority: FYI</span>
+                      </span>
+                    )}
+
+                    {/* Category & Sentiment */}
+                    {fullscreenEmail.category && (
+                      <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800">
+                        #{fullscreenEmail.category}
+                      </span>
+                    )}
+                    {fullscreenEmail.sentiment && (
+                      <span className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                        Tone: {fullscreenEmail.sentiment}
+                      </span>
+                    )}
+
+                    {/* Deadline Badge */}
+                    {fullscreenEmail.deadline && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold ${
+                          isDeadlineApproaching(fullscreenEmail.deadline)
+                            ? 'bg-rose-100 text-rose-800 border-2 border-rose-300 ring-2 ring-rose-400/30 animate-pulse'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300'
+                        }`}
+                      >
+                        <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Due: {fullscreenEmail.deadline}</span>
+                        {isDeadlineApproaching(fullscreenEmail.deadline) && (
+                          <span className="px-1.5 py-0.2 bg-rose-600 text-white text-[9px] font-black rounded uppercase">
+                            &lt;24h Warning
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  <h2 className="text-lg sm:text-xl md:text-2xl font-extrabold leading-tight text-slate-900 dark:text-white">
+                    {fullscreenEmail.subject}
+                  </h2>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex-wrap">
+                    <span>
+                      From: <strong className="text-slate-800 dark:text-slate-200">{fullscreenEmail.sender}</strong>
+                    </span>
+                    <span>•</span>
+                    <span>{fullscreenEmail.date}</span>
+                  </div>
+                </div>
+
+                {/* Close and Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      openReplyModal(fullscreenEmail);
+                    }}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Quick Reply</span>
+                  </button>
+                  {fullscreenEmail.deadline && (
+                    <button
+                      onClick={() => handleAddToCalendar(fullscreenEmail)}
+                      disabled={addingToCalendar === fullscreenEmail.id}
+                      className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>+ Calendar</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setFullscreenEmail(null)}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                    title="Close Fullscreen View"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Fullscreen Modal Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+              {/* Approaching Deadline Alert Banner */}
+              {isDeadlineApproaching(fullscreenEmail.deadline) && (
+                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 text-white rounded-2xl shadow-md animate-pulse">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-yellow-200 shrink-0" />
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-extrabold">
+                        URGENT DEADLINE WARNING: Due Within &lt; 24 Hours!
+                      </h4>
+                      <p className="text-[11px] text-rose-100 mt-0.5">
+                        This email requires immediate attention or deliverable submission before {fullscreenEmail.deadline}.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleAddToCalendar(fullscreenEmail)}
+                    className="px-3 py-1.5 bg-white text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition shadow-xs shrink-0 cursor-pointer flex items-center gap-1"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Sync to Cal</span>
+                  </button>
+                </div>
+              )}
+
+              {/* AI Executive Summary */}
+              <div className="bg-gradient-to-br from-indigo-50/70 via-indigo-50/40 to-slate-50 dark:from-slate-800 dark:to-slate-850 rounded-2xl p-4 sm:p-5 border border-indigo-100 dark:border-slate-700 shadow-xs">
+                <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider mb-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>AI Executive Summary (TL;DR)</span>
+                </div>
+                <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed font-normal">
+                  {fullscreenEmail.summary || 'Summary generated by InboxPulse AI.'}
+                </p>
+              </div>
+
+              {/* BIG LINKS Section */}
+              {(() => {
+                const allLinks = extractAllLinks(fullscreenEmail);
+                return (
+                  <div className="bg-gradient-to-br from-indigo-50/60 to-purple-50/40 dark:from-slate-850 dark:to-slate-900 rounded-2xl p-4 sm:p-5 border-2 border-indigo-200/80 dark:border-indigo-900/60 shadow-xs">
+                    <div className="flex items-center justify-between mb-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <ExternalLink className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>Big Resource Links &amp; Destinations</span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                              {allLinks.length} Links
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Prominent high-visibility clickable links detected in this email
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {allLinks.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {allLinks.map((link, idx) => {
+                          const domain = getDomain(link);
+                          return (
+                            <div
+                              key={idx}
+                              className="group flex items-center justify-between gap-3 p-3.5 bg-white dark:bg-slate-900 rounded-xl border-2 border-indigo-100 dark:border-indigo-900/60 hover:border-indigo-500 dark:hover:border-indigo-400 shadow-xs hover:shadow-md transition-all"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold shrink-0 group-hover:scale-105 transition">
+                                  <Globe className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                      {domain}
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded font-medium">
+                                      Link
+                                    </span>
+                                  </div>
+                                  <p
+                                    className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[240px] sm:max-w-[300px]"
+                                    title={link}
+                                  >
+                                    {link}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(link);
+                                    addToast('URL copied to clipboard!', 'success');
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                                  title="Copy URL"
+                                >
+                                  <Copy className="w-4 h-4" />
+                                </button>
+                                <a
+                                  href={link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs hover:shadow transition group-hover:ring-2 group-hover:ring-indigo-300"
+                                >
+                                  <span>Open</span>
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-xs text-slate-400 bg-white/70 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                        No external URLs detected in this email.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Actionable Checklist (Small & Compact in Fullscreen) */}
+              {fullscreenEmail.tasks && fullscreenEmail.tasks.length > 0 && (
+                <div className="bg-slate-50/90 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-200/80 dark:border-slate-700/70">
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <ListTodo className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>Actionable Checklist ({fullscreenEmail.tasks.length})</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">Click to cross-off</span>
+                  </div>
+                  <div className="space-y-1">
+                    {fullscreenEmail.tasks.map((task) => (
+                      <label
+                        key={task.id}
+                        className="flex items-center justify-between gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer hover:text-slate-900 dark:hover:text-white select-none group py-1 px-2 rounded-lg hover:bg-slate-100/70 dark:hover:bg-slate-700/50 transition"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={task.completed}
+                            onChange={(e) => toggleTask(fullscreenEmail.id, task.id, e.target.checked)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer shrink-0"
+                          />
+                          <span
+                            className={`truncate ${
+                              task.completed
+                                ? 'line-through text-slate-400 dark:text-slate-500'
+                                : 'group-hover:text-slate-900 dark:group-hover:text-white'
+                            }`}
+                            title={task.text}
+                          >
+                            {task.text}
+                          </span>
+                        </div>
+                        {renderTaskPriorityBadge(task.priority, task.text, fullscreenEmail.urgency)}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Extracted People and Stakeholders */}
+              {fullscreenEmail.key_entities?.people && fullscreenEmail.key_entities.people.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
+                    <UserIcon className="w-3.5 h-3.5" />
+                    <span>Identified Stakeholders &amp; Contacts</span>
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {fullscreenEmail.key_entities.people.map((person, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                      >
+                        <UserIcon className="w-3 h-3 text-purple-500" />
+                        <span>{person}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Original Email Message (Raw Body) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Original Message Body</span>
+                  </h4>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(fullscreenEmail.raw_body);
+                      addToast('Original message copied!', 'success');
+                    }}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 flex items-center gap-1 font-semibold cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy Text</span>
+                  </button>
+                </div>
+                <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto border border-slate-800 leading-relaxed">
+                  {fullscreenEmail.raw_body}
+                </div>
+              </div>
+            </div>
+
+            {/* Fullscreen Modal Footer */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleReadStatus(fullscreenEmail.id, fullscreenEmail.is_read)}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  {fullscreenEmail.is_read ? (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Mark Unread</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-3.5 h-3.5 text-blue-500" />
+                      <span>Mark Read</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openReplyModal(fullscreenEmail)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Draft AI Reply</span>
+                </button>
+                <button
+                  onClick={() => setFullscreenEmail(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl transition cursor-pointer"
+                >
+                  Close Fullscreen
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
